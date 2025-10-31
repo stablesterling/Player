@@ -57,7 +57,7 @@ def search_song():
         with YoutubeDL(YDL_OPTS) as ydl:
             results = ydl.extract_info(song_name, download=False)["entries"]
 
-        songs = [{"title": re.sub(r'[^\w\s]', '', vid["title"]), "id": vid["id"]}
+        songs = [{"title": re.sub(r'[^\w\s]', '', vid["title"]), "id": vid["id"]} 
                  for vid in results if vid.get("id")]
         return {"results": songs}
 
@@ -67,14 +67,10 @@ def search_song():
 
 # --- Telegram Bot Handlers ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎶 Welcome! Send a song name to search and play."
-    )
+    await update.message.reply_text("🎶 Welcome! Send a song name to search and play.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Send a song name and I will search it on YouTube for you."
-    )
+    await update.message.reply_text("Send a song name to search and play.")
 
 async def handle_music_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text.strip()
@@ -85,6 +81,7 @@ async def handle_music_search(update: Update, context: ContextTypes.DEFAULT_TYPE
     status_message = await update.message.reply_text(
         f"🔍 Searching YouTube for: *{query}* ...", parse_mode='Markdown'
     )
+
     try:
         with YoutubeDL(YDL_OPTS) as ydl:
             results = ydl.extract_info(query, download=False)["entries"]
@@ -94,16 +91,10 @@ async def handle_music_search(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
 
         buttons = [
-            [InlineKeyboardButton(
-                re.sub(r'[^\w\s]', '', vid["title"])[:50],
-                callback_data=vid["id"]
-            )] for vid in results if vid.get("id")
+            [InlineKeyboardButton(re.sub(r'[^\w\s]', '', vid["title"])[:50], callback_data=vid["id"])]
+            for vid in results if vid.get("id")
         ]
-
-        await status_message.edit_text(
-            "Select a song:",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+        await status_message.edit_text("Select a song:", reply_markup=InlineKeyboardMarkup(buttons))
 
     except Exception as e:
         logger.error(f"Bot search error: {e}")
@@ -114,8 +105,7 @@ async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_
     await query.answer()
     video_id = query.data
     await query.edit_message_text(
-        f"🎵 Click the song in the web app to play: "
-        f"https://t.me/your_bot_username?start={video_id}"
+        f"🎵 Click the song in the web app to play: https://t.me/your_bot_username?start={video_id}"
     )
 
 # --- Main Function ---
@@ -123,14 +113,15 @@ def main():
     if not BOT_TOKEN:
         raise ValueError("❌ BOT_TOKEN missing!")
 
-    # Telegram Bot setup
     application = Application.builder().token(BOT_TOKEN).build()
+
+    # Add handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_music_search))
     application.add_handler(CallbackQueryHandler(button_callback_handler))
 
-    # Webhook or polling
+    # Run the bot
     if WEBHOOK_URL:
         application.run_webhook(
             listen="0.0.0.0",
