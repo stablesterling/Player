@@ -36,7 +36,7 @@ YDL_OPTS = {
     'quiet': True,
     'noplaylist': True,
     'extract_flat': 'in_playlist',
-    'default_search': 'ytsearch20',  # Top 20 results
+    'default_search': 'ytsearch20',
 }
 
 # --- Flask App ---
@@ -52,15 +52,12 @@ def search_song():
     song_name = data.get('query')
     if not song_name:
         return {"error": "No song name provided"}, 400
-
     try:
         with YoutubeDL(YDL_OPTS) as ydl:
             results = ydl.extract_info(song_name, download=False)["entries"]
-
-        songs = [{"title": re.sub(r'[^\w\s]', '', vid["title"]), "id": vid["id"]} 
+        songs = [{"title": re.sub(r'[^\w\s]', '', vid["title"]), "id": vid["id"]}
                  for vid in results if vid.get("id")]
         return {"results": songs}
-
     except Exception as e:
         logger.error(f"Search error: {e}")
         return {"error": "Failed to search"}, 500
@@ -81,7 +78,6 @@ async def handle_music_search(update: Update, context: ContextTypes.DEFAULT_TYPE
     status_message = await update.message.reply_text(
         f"🔍 Searching YouTube for: *{query}* ...", parse_mode='Markdown'
     )
-
     try:
         with YoutubeDL(YDL_OPTS) as ydl:
             results = ydl.extract_info(query, download=False)["entries"]
@@ -113,15 +109,16 @@ def main():
     if not BOT_TOKEN:
         raise ValueError("❌ BOT_TOKEN missing!")
 
+    # Create Application
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Add handlers
+    # Handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_music_search))
     application.add_handler(CallbackQueryHandler(button_callback_handler))
 
-    # Run the bot
+    # Run bot: Webhook if set, else Polling
     if WEBHOOK_URL:
         application.run_webhook(
             listen="0.0.0.0",
