@@ -7,7 +7,7 @@
 <style>
 body { font-family: Arial; text-align: center; padding: 20px; }
 input, button { padding: 10px; margin: 5px; width: 300px; }
-.song { margin: 10px 0; }
+.song { margin: 10px 0; display: block; }
 </style>
 </head>
 <body>
@@ -35,7 +35,6 @@ async function searchSong() {
             link.target = "_blank";
             link.className = "song";
             resultsDiv.appendChild(link);
-            resultsDiv.appendChild(document.createElement("br"));
         });
     } else {
         resultsDiv.textContent = data.error || "No results found";
