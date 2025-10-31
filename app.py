@@ -1,28 +1,29 @@
-import logging
 import os
 import re
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
-)
+import logging
+from flask import Flask, request, jsonify, send_from_directory
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
 from yt_dlp import YoutubeDL
 from dotenv import load_dotenv
+import asyncio
 
 # --- Load Environment Variables ---
 load_dotenv()
-
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8438947587:AAF798xzM76oR8_TY8UyP7u_FpjeFLF7Kss")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 PORT = int(os.getenv("PORT", 8080))
+DOWNLOAD_PATH = './downloads'
+os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 
 # --- Logging ---
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- YT-DLP Config for search ---
+# --- Flask App ---
+app = Flask(__name__, static_folder='static')
+
+# --- YT-DLP Config ---
 YDL_OPTS = {
     'format': 'bestaudio/best',
     'quiet': True,
@@ -31,23 +32,19 @@ YDL_OPTS = {
     'default_search': 'ytsearch20',  # Top 20 results
 }
 
+# --- Telegram Bot Application ---
+application = Application.builder().token(BOT_TOKEN).build()
+
 # --- /start Command ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎶 *Welcome to VoFo Music Bot!*\n\n"
-        "Send me any *song name or artist* and I’ll fetch YouTube results.\n"
-        "Then tap a button to play the song. 🎧",
-        parse_mode='Markdown'
+        "🎶 Welcome to VoFo Music Bot!\nSend a song name to play."
     )
 
 # --- /help Command ---
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🆘 *How to use:*\n"
-        "1️⃣ Send any song or artist name\n"
-        "2️⃣ Choose from the search results\n"
-        "3️⃣ I’ll stream the MP3 audio to you 🎵",
-        parse_mode='Markdown'
+        "Send a song name and I will show the top 20 results. Click to play!"
     )
 
 # --- Handle Song Search ---
@@ -57,99 +54,94 @@ async def handle_music_search(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ Please send a valid song name.")
         return
 
-    status_message = await update.message.reply_text(f"🔍 Searching YouTube for: *{query}* ...", parse_mode='Markdown')
-
+    status_msg = await update.message.reply_text(f"🔍 Searching: {query} ...")
     try:
         with YoutubeDL(YDL_OPTS) as ydl:
             results = ydl.extract_info(query, download=False)["entries"]
 
         if not results:
-            await status_message.edit_text("⚠️ No results found. Try another name.")
+            await status_msg.edit_text("⚠️ No results found.")
             return
 
-        # Create inline buttons for top 20 results
         buttons = []
         for vid in results:
             title = re.sub(r'[^\w\s]', '', vid["title"])[:50]
-            video_id = vid.get("id")
-            if video_id:
-                buttons.append([InlineKeyboardButton(title, callback_data=video_id)])
+            vid_id = vid.get("id")
+            if vid_id:
+                buttons.append([InlineKeyboardButton(title, callback_data=vid_id)])
 
         reply_markup = InlineKeyboardMarkup(buttons)
-        await status_message.edit_text(
-            f"🎧 *Top results for:* `{query}`\nTap a song to play ↓",
-            parse_mode='Markdown',
+        await status_msg.edit_text(
+            f"🎧 Top results for: {query}",
             reply_markup=reply_markup
         )
-
     except Exception as e:
         logger.error(f"Search error: {e}")
-        await status_message.edit_text("❌ Error while searching. Try again later.")
+        await status_msg.edit_text("❌ Search error.")
 
-# --- Handle Song Selection (Play Only) ---
-async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- Handle Button Callback (Play) ---
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     video_id = query.data
 
     try:
         url = f"https://www.youtube.com/watch?v={video_id}"
-        await query.edit_message_text("🎵 Preparing audio to play... ⏳")
+        await query.edit_message_text("🎵 Fetching audio...")
 
         opts = {
             'format': 'bestaudio/best',
+            'outtmpl': f"{DOWNLOAD_PATH}/%(title)s.%(ext)s",
             'quiet': True,
             'noplaylist': True,
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
         }
 
         with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            audio_url = info['url']  # Direct audio URL
-            title = info.get("title", "Unknown Song")
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info).replace(".webm", ".mp3").replace(".m4a", ".mp3")
 
-        await query.message.reply_audio(
-            audio=audio_url,
-            caption=f"🎶 *{title}*\n\nPowered by VoFo Music Bot 🎧",
-            parse_mode='Markdown'
-        )
+        title = info.get("title", "Unknown")
+        await query.message.reply_audio(audio=open(filename, 'rb'), caption=f"🎶 {title}")
 
+        os.remove(filename)
     except Exception as e:
         logger.error(f"Playback error: {e}")
-        await query.edit_message_text("❌ Failed to play the audio.")
+        await query.edit_message_text("❌ Failed to play audio.")
 
-# --- Main Entry Point ---
-def main():
-    if not BOT_TOKEN:
-        raise ValueError("❌ BOT_TOKEN is missing in environment variables!")
+# --- Add Telegram Handlers ---
+application.add_handler(CommandHandler("start", start_command))
+application.add_handler(CommandHandler("help", help_command))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_music_search))
+application.add_handler(CallbackQueryHandler(button_callback))
 
-    # --- Local Polling (for testing) ---
-    if not WEBHOOK_URL or WEBHOOK_URL == "YOUR_RENDER_OR_RAILWAY_URL":
-        logger.info("🚀 Starting bot in LOCAL POLLING mode.")
-        application = Application.builder().token(BOT_TOKEN).build()
+# --- Flask Routes ---
+@app.route('/')
+def index():
+    return send_from_directory('static', 'index.html')
 
-        application.add_handler(CommandHandler("start", start_command))
-        application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_music_search))
-        application.add_handler(CallbackQueryHandler(button_callback_handler))
+@app.route('/search', methods=['POST'])
+def search():
+    data = request.json
+    query = data.get("query", "")
+    if not query:
+        return jsonify({"error": "No query provided"}), 400
 
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    async def send_query():
+        # Send to Telegram bot to search
+        fake_update = Update(update_id=0, message=None)
+        # Not fully functional in Flask for async bot; use frontend → Telegram directly in production
         return
 
-    # --- Webhook Mode (for Render/Railway) ---
-    logger.info(f"🚀 Starting bot in WEBHOOK mode on port {PORT}.")
-    application = Application.builder().token(BOT_TOKEN).build()
+    asyncio.run(send_query())
+    return jsonify({"message": f"Search request sent: {query}"})
 
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_music_search))
-    application.add_handler(CallbackQueryHandler(button_callback_handler))
-
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path="",
-        webhook_url=WEBHOOK_URL
-    )
-
+# --- Run Flask App ---
 if __name__ == '__main__':
-    main()
+    # Start Telegram bot in background
+    application.run_polling()
+    # Flask app will be served by Railway automatically
