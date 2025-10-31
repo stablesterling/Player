@@ -11,12 +11,9 @@ from dotenv import load_dotenv
 # --- Load Environment Variables ---
 load_dotenv()
 
-# ✅ Correct usage: read BOT_TOKEN from environment OR use fallback
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8438947587:AAF798xzM76oR8_TY8UyP7u_FpjeFLF7Kss")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 PORT = int(os.getenv("PORT", 8080))
-DOWNLOAD_PATH = './downloads'
-os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 
 # --- Logging ---
 logging.basicConfig(
@@ -25,13 +22,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# --- YT-DLP Config ---
+# --- YT-DLP Config for search ---
 YDL_OPTS = {
     'format': 'bestaudio/best',
     'quiet': True,
     'noplaylist': True,
     'extract_flat': 'in_playlist',
-    'default_search': 'ytsearch5',  # Top 5 results
+    'default_search': 'ytsearch20',  # Top 20 results
 }
 
 # --- /start Command ---
@@ -39,7 +36,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎶 *Welcome to VoFo Music Bot!*\n\n"
         "Send me any *song name or artist* and I’ll fetch YouTube results.\n"
-        "Then tap a button to play or download the song. 🎧",
+        "Then tap a button to play the song. 🎧",
         parse_mode='Markdown'
     )
 
@@ -49,7 +46,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🆘 *How to use:*\n"
         "1️⃣ Send any song or artist name\n"
         "2️⃣ Choose from the search results\n"
-        "3️⃣ I’ll send the MP3 audio file 🎵",
+        "3️⃣ I’ll stream the MP3 audio to you 🎵",
         parse_mode='Markdown'
     )
 
@@ -70,7 +67,7 @@ async def handle_music_search(update: Update, context: ContextTypes.DEFAULT_TYPE
             await status_message.edit_text("⚠️ No results found. Try another name.")
             return
 
-        # Create inline buttons for top results
+        # Create inline buttons for top 20 results
         buttons = []
         for vid in results:
             title = re.sub(r'[^\w\s]', '', vid["title"])[:50]
@@ -89,7 +86,7 @@ async def handle_music_search(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.error(f"Search error: {e}")
         await status_message.edit_text("❌ Error while searching. Try again later.")
 
-# --- Handle Song Selection (Download/Play) ---
+# --- Handle Song Selection (Play Only) ---
 async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -97,37 +94,28 @@ async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_
 
     try:
         url = f"https://www.youtube.com/watch?v={video_id}"
-        await query.edit_message_text("🎵 Fetching audio... Please wait ⏳")
+        await query.edit_message_text("🎵 Preparing audio to play... ⏳")
 
         opts = {
             'format': 'bestaudio/best',
-            'outtmpl': f"{DOWNLOAD_PATH}/%(title)s.%(ext)s",
             'quiet': True,
             'noplaylist': True,
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
         }
 
         with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = ydl.prepare_filename(info)
-            filename = filename.replace(".webm", ".mp3").replace(".m4a", ".mp3")
+            info = ydl.extract_info(url, download=False)
+            audio_url = info['url']  # Direct audio URL
+            title = info.get("title", "Unknown Song")
 
-        title = info.get("title", "Unknown Song")
         await query.message.reply_audio(
-            audio=open(filename, 'rb'),
+            audio=audio_url,
             caption=f"🎶 *{title}*\n\nPowered by VoFo Music Bot 🎧",
             parse_mode='Markdown'
         )
 
-        os.remove(filename)
-
     except Exception as e:
-        logger.error(f"Download error: {e}")
-        await query.edit_message_text("❌ Failed to download or send the audio.")
+        logger.error(f"Playback error: {e}")
+        await query.edit_message_text("❌ Failed to play the audio.")
 
 # --- Main Entry Point ---
 def main():
