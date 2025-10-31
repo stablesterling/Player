@@ -1,13 +1,12 @@
 import logging
 import os
 import re
-from flask import Flask, request, send_file
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from flask import Flask, request, jsonify, send_file
+from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
     ContextTypes,
     filters,
 )
@@ -16,12 +15,8 @@ from dotenv import load_dotenv
 
 # --- Load Environment Variables ---
 load_dotenv()
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PORT = int(os.getenv("PORT", 8080))
-DOWNLOAD_PATH = './downloads'
-os.makedirs(DOWNLOAD_PATH, exist_ok=True)
 
 # --- Logging ---
 logging.basicConfig(
@@ -36,11 +31,11 @@ YDL_OPTS = {
     'quiet': True,
     'noplaylist': True,
     'extract_flat': 'in_playlist',
-    'default_search': 'ytsearch20',
+    'default_search': 'ytsearch10',
 }
 
 # --- Flask App ---
-app = Flask(__name__)
+app = Flask(__name__, static_folder=".", static_url_path="")
 
 @app.route('/')
 def home():
@@ -55,8 +50,8 @@ def search_song():
     try:
         with YoutubeDL(YDL_OPTS) as ydl:
             results = ydl.extract_info(song_name, download=False)["entries"]
-        songs = [{"title": re.sub(r'[^\w\s]', '', vid["title"]), "id": vid["id"]}
-                 for vid in results if vid.get("id")]
+        songs = [{"title": re.sub(r'[^\w\s]', '', vid["title"]),
+                  "id": vid["id"]} for vid in results if vid.get("id")]
         return {"results": songs}
     except Exception as e:
         logger.error(f"Search error: {e}")
@@ -86,48 +81,27 @@ async def handle_music_search(update: Update, context: ContextTypes.DEFAULT_TYPE
             await status_message.edit_text("⚠️ No results found.")
             return
 
-        buttons = [
-            [InlineKeyboardButton(re.sub(r'[^\w\s]', '', vid["title"])[:50], callback_data=vid["id"])]
-            for vid in results if vid.get("id")
-        ]
-        await status_message.edit_text("Select a song:", reply_markup=InlineKeyboardMarkup(buttons))
+        msg = "🎵 Top results (click to play on web app):\n\n"
+        for vid in results:
+            if vid.get("id") and vid.get("title"):
+                # Link points to your web app which streams the song
+                msg += f"{re.sub(r'[^\w\s]', '', vid['title'])}: http://localhost:{PORT}/play/{vid['id']}\n"
 
+        await status_message.edit_text(msg)
     except Exception as e:
         logger.error(f"Bot search error: {e}")
         await status_message.edit_text("❌ Error while searching.")
-
-async def button_callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    video_id = query.data
-    await query.edit_message_text(
-        f"🎵 Click the song in the web app to play: https://t.me/your_bot_username?start={video_id}"
-    )
 
 # --- Main Function ---
 def main():
     if not BOT_TOKEN:
         raise ValueError("❌ BOT_TOKEN missing!")
 
-    # Create Application
     application = Application.builder().token(BOT_TOKEN).build()
-
-    # Handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_music_search))
-    application.add_handler(CallbackQueryHandler(button_callback_handler))
-
-    # Run bot: Webhook if set, else Polling
-    if WEBHOOK_URL:
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path="",
-            webhook_url=WEBHOOK_URL
-        )
-    else:
-        application.run_polling()
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
