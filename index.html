@@ -7,7 +7,8 @@
 <style>
 body { font-family: Arial; text-align: center; padding: 20px; }
 input, button { padding: 10px; margin: 5px; width: 300px; }
-.song { margin: 10px 0; display: block; }
+.song { margin: 15px 0; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
+audio { margin-top: 5px; width: 300px; }
 </style>
 </head>
 <body>
@@ -27,14 +28,23 @@ async function searchSong() {
     const data = await res.json();
     const resultsDiv = document.getElementById("results");
     resultsDiv.innerHTML = "";
+
     if (data.results) {
         data.results.forEach(song => {
-            const link = document.createElement("a");
-            link.href = `https://t.me/vofo1bot?start=${song.id}`;
-            link.textContent = song.title;
-            link.target = "_blank";
-            link.className = "song";
-            resultsDiv.appendChild(link);
+            const songDiv = document.createElement("div");
+            songDiv.className = "song";
+
+            const title = document.createElement("p");
+            title.textContent = song.title;
+            songDiv.appendChild(title);
+
+            const audio = document.createElement("audio");
+            audio.controls = true;
+            // Use YouTube embed for direct playback
+            audio.src = `https://www.youtube.com/embed/${song.id}`;
+            songDiv.appendChild(audio);
+
+            resultsDiv.appendChild(songDiv);
         });
     } else {
         resultsDiv.textContent = data.error || "No results found";
