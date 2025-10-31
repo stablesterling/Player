@@ -5,57 +5,136 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VoFo Music Web</title>
 <style>
-body { font-family: Arial; text-align: center; padding: 20px; }
-input, button { padding: 10px; margin: 5px; width: 300px; }
-.song { margin: 15px 0; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
-audio { margin-top: 5px; width: 300px; }
+body {
+    font-family: Arial, sans-serif;
+    background: #f4f6fa;
+    text-align: center;
+    padding: 20px;
+}
+h1 {
+    color: #333;
+}
+input, button {
+    padding: 10px;
+    margin: 5px;
+    width: 300px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+}
+button {
+    background-color: #4CAF50;
+    color: white;
+    cursor: pointer;
+}
+button:hover {
+    background-color: #45a049;
+}
+#results {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 20px;
+}
+.song-card {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    width: 220px;
+    margin: 10px;
+    padding: 15px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+.song-card:hover {
+    transform: scale(1.05);
+    background: #f0fdf4;
+}
+.song-title {
+    font-weight: bold;
+    margin-bottom: 10px;
+    color: #333;
+}
+.song-card.playing {
+    border: 2px solid #4CAF50;
+    box-shadow: 0 0 15px rgba(76,175,80,0.5);
+}
+audio {
+    display: none; /* Hide native audio controls */
+}
 </style>
 </head>
 <body>
+
 <h1>VoFo Music Web</h1>
 <input type="text" id="songQuery" placeholder="Enter song name">
 <button onclick="searchSong()">Search</button>
+
 <div id="results"></div>
 
 <script>
+let currentAudio = null; // track currently playing audio
+
 async function searchSong() {
     const query = document.getElementById("songQuery").value.trim();
-    if(!query) return alert("Enter a song name");
+    if (!query) return alert("Enter a song name");
 
     const res = await fetch("/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query })
     });
+
     const data = await res.json();
     const resultsDiv = document.getElementById("results");
     resultsDiv.innerHTML = "";
 
     if (data.results && data.results.length > 0) {
         for (const song of data.results) {
-            const songDiv = document.createElement("div");
-            songDiv.className = "song";
+            const songCard = document.createElement("div");
+            songCard.className = "song-card";
 
-            const title = document.createElement("p");
+            const title = document.createElement("div");
+            title.className = "song-title";
             title.textContent = song.title;
-            songDiv.appendChild(title);
+            songCard.appendChild(title);
 
             const audio = document.createElement("audio");
-            audio.controls = true;
-
-            // Fetch direct audio URL from Flask
             const audioRes = await fetch(`/play/${song.id}`);
             const audioData = await audioRes.json();
-            if (audioData.url) audio.src = audioData.url;
-            else audio.textContent = "Failed to load audio";
 
-            songDiv.appendChild(audio);
-            resultsDiv.appendChild(songDiv);
+            if (audioData.url) {
+                audio.src = audioData.url;
+            }
+
+            songCard.appendChild(audio);
+
+            songCard.addEventListener("click", () => {
+                if (currentAudio && currentAudio !== audio) {
+                    currentAudio.pause();
+                    currentAudio.parentElement.classList.remove("playing");
+                }
+                if (audio.paused) {
+                    audio.play();
+                    songCard.classList.add("playing");
+                    currentAudio = audio;
+                } else {
+                    audio.pause();
+                    songCard.classList.remove("playing");
+                    currentAudio = null;
+                }
+            });
+
+            audio.addEventListener("ended", () => {
+                songCard.classList.remove("playing");
+            });
+
+            resultsDiv.appendChild(songCard);
         }
     } else {
         resultsDiv.textContent = data.error || "No results found";
     }
 }
 </script>
+
 </body>
 </html>
