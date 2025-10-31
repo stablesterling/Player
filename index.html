@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoFo Music Web</title>
+<style>
+body { font-family: Arial; text-align: center; padding: 20px; }
+input, button { padding: 10px; margin: 5px; width: 300px; }
+.song { margin: 10px 0; }
+</style>
+</head>
+<body>
+<h1>VoFo Music Web</h1>
+<input type="text" id="songQuery" placeholder="Enter song name">
+<button onclick="searchSong()">Search</button>
+<div id="results"></div>
+
+<script>
+async function searchSong() {
+    const query = document.getElementById("songQuery").value;
+    const res = await fetch("/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query })
+    });
+    const data = await res.json();
+    const resultsDiv = document.getElementById("results");
+    resultsDiv.innerHTML = "";
+    if (data.results) {
+        data.results.forEach(song => {
+            const link = document.createElement("a");
+            link.href = `https://t.me/vofo1bot?start=${song.id}`;
+            link.textContent = song.title;
+            link.target = "_blank";
+            link.className = "song";
+            resultsDiv.appendChild(link);
+            resultsDiv.appendChild(document.createElement("br"));
+        });
+    } else {
+        resultsDiv.textContent = data.error || "No results found";
+    }
+}
+</script>
+</body>
+</html>
