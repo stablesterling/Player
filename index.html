@@ -19,7 +19,9 @@ audio { margin-top: 5px; width: 300px; }
 
 <script>
 async function searchSong() {
-    const query = document.getElementById("songQuery").value;
+    const query = document.getElementById("songQuery").value.trim();
+    if(!query) return alert("Enter a song name");
+
     const res = await fetch("/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -29,8 +31,8 @@ async function searchSong() {
     const resultsDiv = document.getElementById("results");
     resultsDiv.innerHTML = "";
 
-    if (data.results) {
-        data.results.forEach(song => {
+    if (data.results && data.results.length > 0) {
+        for (const song of data.results) {
             const songDiv = document.createElement("div");
             songDiv.className = "song";
 
@@ -40,12 +42,16 @@ async function searchSong() {
 
             const audio = document.createElement("audio");
             audio.controls = true;
-            // Use YouTube embed for direct playback
-            audio.src = `https://www.youtube.com/embed/${song.id}`;
-            songDiv.appendChild(audio);
 
+            // Fetch direct audio URL from Flask
+            const audioRes = await fetch(`/play/${song.id}`);
+            const audioData = await audioRes.json();
+            if (audioData.url) audio.src = audioData.url;
+            else audio.textContent = "Failed to load audio";
+
+            songDiv.appendChild(audio);
             resultsDiv.appendChild(songDiv);
-        });
+        }
     } else {
         resultsDiv.textContent = data.error || "No results found";
     }
